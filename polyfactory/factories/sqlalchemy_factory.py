@@ -1,7 +1,17 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Generic, List, TypeVar, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    ClassVar,
+    Coroutine,
+    Generic,
+    List,
+    TypeVar,
+    Union,
+)
 
 from typing_extensions import Annotated
 
@@ -257,3 +267,53 @@ class SQLAlchemyFactory(Generic[T], BaseFactory[T]):
                 else SQLAASyncPersistence(cls.__async_session__)
             )
         return super()._get_async_persistence()
+
+    @classmethod
+    async def build_async(cls, **kwargs: Any) -> T:
+        """Asynchronously build an instance of the factory's __model__ and await all coroutines from __model__ fields
+
+        :param kwargs: Any kwargs. If field names are set in kwargs, their values will be used.
+
+        :returns: An instance of type T.
+
+        """
+        data: dict[str, Any] = cls.process_kwargs(**kwargs)
+        for k, v in data.items():
+            if isinstance(v, Coroutine):
+                data[k] = await v
+
+        return cls.__model__(**data)
+
+    @classmethod
+    async def batch_async(cls, size: int, **kwargs: Any) -> list[T]:
+        """Asynchronously build a batch of size n of the factory's Meta.model.
+
+        :param size: Size of the batch.
+        :param kwargs: Any kwargs. If field_meta names are set in kwargs, their values will be used.
+
+        :returns: A list of instances of type T.
+
+        """
+        return [await cls.build_async(**kwargs) for _ in range(size)]
+
+    @classmethod
+    async def create_async(cls, **kwargs: Any) -> T:
+        """Build and persists asynchronously a single model instance.
+
+        :param kwargs: Any kwargs. If field_meta names are set in kwargs, their values will be used.
+
+        :returns: An instance of type T.
+        """
+        return await cls._get_async_persistence().save(data=await cls.build_async(**kwargs))
+
+    @classmethod
+    async def create_batch_async(cls, size: int, **kwargs: Any) -> list[T]:
+        """Build and persists asynchronously a batch of n size model instances.
+
+
+        :param size: Size of the batch.
+        :param kwargs: Any kwargs. If field_meta names are set in kwargs, their values will be used.
+
+        :returns: A list of instances of type T.
+        """
+        return await cls._get_async_persistence().save_many(data=await cls.batch_async(size, **kwargs))
